@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 
+import java.time.Instant;
+
 @Entity
 @Table(name = "users")
 @Inheritance(strategy = InheritanceType.JOINED)
@@ -32,4 +34,5 @@ public abstract class User {
 
     @Column(nullable = false)
     private boolean isActive;
+
 }

@@ -22,29 +22,22 @@ public class TrainingService {
     private final TrainingRepository trainingRepository;
     private final TraineeRepository traineeRepository;
     private final TrainerRepository trainerRepository;
-    private final AuthenticationService authenticationService;
     private final GymMetricsService gymMetricsService;
 
     public TrainingService(TrainingRepository trainingRepository,
                            TraineeRepository traineeRepository,
                            TrainerRepository trainerRepository,
-                           AuthenticationService authenticationService,
                            GymMetricsService gymMetricsService) {
         this.trainingRepository = trainingRepository;
         this.traineeRepository = traineeRepository;
         this.trainerRepository = trainerRepository;
-        this.authenticationService = authenticationService;
         this.gymMetricsService = gymMetricsService;
     }
 
     @Transactional
-    public Training addTraining(String authUsername,
-                                String authPassword,
-                                String traineeUsername,
+    public Training addTraining(String traineeUsername,
                                 String trainerUsername,
                                 Training training) {
-        authenticationService.authenticate(authUsername, authPassword);
-
         Trainee trainee = traineeRepository.findByUsernameWithTrainers(traineeUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Trainee not found"));
 
@@ -69,22 +62,18 @@ public class TrainingService {
 
     @Transactional(readOnly = true)
     public List<Training> getTraineeTrainings(String username,
-                                              String password,
                                               LocalDateTime from,
                                               LocalDateTime to,
                                               String trainerName,
                                               String trainingType) {
-        authenticationService.authenticate(username, password);
         return trainingRepository.findByTraineeCriteria(username, from, to, trainerName, trainingType);
     }
 
     @Transactional(readOnly = true)
     public List<Training> getTrainerTrainings(String username,
-                                              String password,
                                               LocalDateTime from,
                                               LocalDateTime to,
                                               String traineeName) {
-        authenticationService.authenticate(username, password);
         return trainingRepository.findByTrainerCriteria(username, from, to, traineeName);
     }
 

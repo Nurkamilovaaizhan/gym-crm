@@ -1,5 +1,6 @@
 package com.gymcrm.service;
 
+import com.gymcrm.dto.CredentialsDto;
 import com.gymcrm.entity.Trainer;
 import com.gymcrm.exception.ValidationException;
 import com.gymcrm.monitoring.metrics.GymMetricsService;
@@ -7,6 +8,7 @@ import com.gymcrm.repository.TrainerRepository;
 import com.gymcrm.repository.UserRepository;
 import com.gymcrm.util.UserUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,44 +18,55 @@ public class TrainerService {
 
     private final TrainerRepository trainerRepository;
     private final UserRepository userRepository;
-    private final AuthenticationService authenticationService;
     private final GymMetricsService gymMetricsService;
+    private final PasswordEncoder passwordEncoder;
 
     public TrainerService(TrainerRepository trainerRepository,
                           UserRepository userRepository,
-                          AuthenticationService authenticationService,
-                          GymMetricsService gymMetricsService) {
+                          GymMetricsService gymMetricsService,
+                          PasswordEncoder passwordEncoder) {
         this.trainerRepository = trainerRepository;
         this.userRepository = userRepository;
-        this.authenticationService = authenticationService;
         this.gymMetricsService = gymMetricsService;
+        this.passwordEncoder = passwordEncoder;
     }
 
-    @Transactional
-    public Trainer createTrainer(Trainer trainer) {
+    public CredentialsDto createTrainer(Trainer trainer) {
         validateForCreate(trainer);
-        UserUtils.setupCredentials(trainer, userRepository.findAllUsernames());
 
-        Trainer saved = trainerRepository.save(trainer);
+        String username = UserUtils.generateUsername(
+                trainer.getFirstName(),
+                trainer.getLastName(),
+                userRepository.findAllUsernames()
+        );
+        String rawPassword = UserUtils.generatePassword();
+
+        trainer.setUsername(username);
+        trainer.setPassword(passwordEncoder.encode(rawPassword));
+        trainer.setActive(true);
+
+        trainerRepository.save(trainer);
+
         gymMetricsService.incrementTrainerRegistration();
+        log.info("Created trainer profile, username={}", username);
 
-        log.info("Created trainer profile, username={}", saved.getUsername());
-        return saved;
+        CredentialsDto response = new CredentialsDto();
+        response.setUsername(username);
+        response.setPassword(rawPassword);
+        return response;
     }
 
     @Transactional(readOnly = true)
-    public Trainer getTrainerByUsername(String username, String password) {
-        authenticationService.authenticate(username, password);
+    public Trainer getTrainerByUsername(String username) {
         return trainerRepository.findByUsernameWithTrainees(username)
                 .orElseThrow(() -> new IllegalArgumentException("Trainer not found"));
     }
 
     @Transactional
-    public Trainer updateTrainer(String username, String password, Trainer updated) {
-        authenticationService.authenticate(username, password);
+    public Trainer updateTrainer(String username, Trainer updated) {
         validateForUpdate(updated);
 
-        Trainer existing = trainerRepository.findById(updated.getId())
+        Trainer existing = trainerRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Trainer not found"));
 
         existing.setFirstName(updated.getFirstName());
@@ -65,9 +78,7 @@ public class TrainerService {
     }
 
     @Transactional
-    public void setActive(String username, String password, boolean active) {
-        authenticationService.authenticate(username, password);
-
+    public void setActive(String username, boolean active) {
         Trainer trainer = trainerRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Trainer not found"));
 
@@ -91,9 +102,6 @@ public class TrainerService {
     }
 
     private void validateForUpdate(Trainer trainer) {
-        if (trainer.getId() == null) {
-            throw new ValidationException("Trainer id is required for update");
-        }
         if (trainer.getFirstName() == null || trainer.getFirstName().isBlank()
                 || trainer.getLastName() == null || trainer.getLastName().isBlank()) {
             throw new ValidationException("First name and last name are required");

@@ -7,6 +7,7 @@ import com.gymcrm.mapper.RestMapper;
 import com.gymcrm.service.TrainerService;
 import com.gymcrm.service.TrainingService;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -28,43 +29,38 @@ public class TrainerController {
 
     @PostMapping
     public CredentialsDto create(@RequestBody TrainerDto request) {
-        var saved = trainerService.createTrainer(RestMapper.toEntity(request));
-
-        CredentialsDto response = new CredentialsDto();
-        response.setUsername(saved.getUsername());
-        response.setPassword(saved.getPassword());
-        return response;
+        return trainerService.createTrainer(RestMapper.toEntity(request));
     }
 
+    @PreAuthorize("isAuthenticated()")
     @GetMapping("/{username}")
-    public TrainerDto get(@PathVariable(value = "username") String username,
-                          @RequestHeader(value = "password") String password) {
-        return RestMapper.toDto(trainerService.getTrainerByUsername(username, password));
+    public TrainerDto get(@PathVariable("username") String username) {
+        return RestMapper.toDto(trainerService.getTrainerByUsername(username));
     }
 
+    @PreAuthorize("isAuthenticated()")
     @PutMapping("/{username}")
-    public TrainerDto update(@PathVariable(value = "username") String username,
-                             @RequestHeader(value = "password") String password,
+    public TrainerDto update(@PathVariable("username") String username,
                              @RequestBody TrainerDto request) {
-        return RestMapper.toDto(trainerService.updateTrainer(username, password, RestMapper.toEntity(request)));
+        return RestMapper.toDto(trainerService.updateTrainer(username, RestMapper.toEntity(request)));
     }
 
+    @PreAuthorize("isAuthenticated()")
     @PatchMapping("/{username}/active")
-    public void setActive(@PathVariable(value = "username") String username,
-                          @RequestHeader(value = "password") String password,
-                          @RequestParam(value = "active") boolean active) {
-        trainerService.setActive(username, password, active);
+    public void setActive(@PathVariable("username") String username,
+                          @RequestParam("active") boolean active) {
+        trainerService.setActive(username, active);
     }
 
+    @PreAuthorize("isAuthenticated()")
     @GetMapping("/{username}/trainings")
-    public List<TrainingDto> getTrainings(@PathVariable(value = "username") String username,
-                                          @RequestHeader(value = "password") String password,
+    public List<TrainingDto> getTrainings(@PathVariable("username") String username,
                                           @RequestParam(value = "from", required = false)
                                           @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
                                           @RequestParam(value = "to", required = false)
                                           @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
                                           @RequestParam(value = "traineeName", required = false) String traineeName) {
-        return trainingService.getTrainerTrainings(username, password, from, to, traineeName)
+        return trainingService.getTrainerTrainings(username, from, to, traineeName)
                 .stream()
                 .map(RestMapper::toDto)
                 .collect(Collectors.toList());

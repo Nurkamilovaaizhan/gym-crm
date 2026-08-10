@@ -1,5 +1,6 @@
 package com.gymcrm.service;
 
+import com.gymcrm.dto.CredentialsDto;
 import com.gymcrm.entity.Trainee;
 import com.gymcrm.entity.Trainer;
 import com.gymcrm.exception.ValidationException;
@@ -9,6 +10,7 @@ import com.gymcrm.repository.TrainerRepository;
 import com.gymcrm.repository.UserRepository;
 import com.gymcrm.util.UserUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,46 +24,57 @@ public class TraineeService {
     private final TraineeRepository traineeRepository;
     private final TrainerRepository trainerRepository;
     private final UserRepository userRepository;
-    private final AuthenticationService authenticationService;
     private final GymMetricsService gymMetricsService;
+    private final PasswordEncoder passwordEncoder;
 
     public TraineeService(TraineeRepository traineeRepository,
                           TrainerRepository trainerRepository,
                           UserRepository userRepository,
-                          AuthenticationService authenticationService,
-                          GymMetricsService gymMetricsService) {
+                          GymMetricsService gymMetricsService,
+                          PasswordEncoder passwordEncoder) {
         this.traineeRepository = traineeRepository;
         this.trainerRepository = trainerRepository;
         this.userRepository = userRepository;
-        this.authenticationService = authenticationService;
         this.gymMetricsService = gymMetricsService;
+        this.passwordEncoder = passwordEncoder;
     }
 
-    @Transactional
-    public Trainee createTrainee(Trainee trainee) {
+    public CredentialsDto createTrainee(Trainee trainee) {
         validateForCreate(trainee);
-        UserUtils.setupCredentials(trainee, userRepository.findAllUsernames());
 
-        Trainee saved = traineeRepository.save(trainee);
+        String username = UserUtils.generateUsername(
+                trainee.getFirstName(),
+                trainee.getLastName(),
+                userRepository.findAllUsernames()
+        );
+        String rawPassword = UserUtils.generatePassword();
+
+        trainee.setUsername(username);
+        trainee.setPassword(passwordEncoder.encode(rawPassword));
+        trainee.setActive(true);
+
+        traineeRepository.save(trainee);
+
         gymMetricsService.incrementTraineeRegistration();
+        log.info("Created trainee profile, username={}", username);
 
-        log.info("Created trainee profile, username={}", saved.getUsername());
-        return saved;
+        CredentialsDto response = new CredentialsDto();
+        response.setUsername(username);
+        response.setPassword(rawPassword);
+        return response;
     }
 
     @Transactional(readOnly = true)
-    public Trainee getTraineeByUsername(String username, String password) {
-        authenticationService.authenticate(username, password);
+    public Trainee getTraineeByUsername(String username) {
         return traineeRepository.findByUsernameWithTrainers(username)
                 .orElseThrow(() -> new IllegalArgumentException("Trainee not found"));
     }
 
     @Transactional
-    public Trainee updateTrainee(String username, String password, Trainee updated) {
-        authenticationService.authenticate(username, password);
+    public Trainee updateTrainee(String username, Trainee updated) {
         validateForUpdate(updated);
 
-        Trainee existing = traineeRepository.findById(updated.getId())
+        Trainee existing = traineeRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Trainee not found"));
 
         existing.setFirstName(updated.getFirstName());
@@ -75,9 +88,7 @@ public class TraineeService {
     }
 
     @Transactional
-    public void deleteTraineeByUsername(String username, String password) {
-        authenticationService.authenticate(username, password);
-
+    public void deleteTraineeByUsername(String username) {
         Trainee trainee = traineeRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Trainee not found"));
 
@@ -86,9 +97,7 @@ public class TraineeService {
     }
 
     @Transactional
-    public void setActive(String username, String password, boolean active) {
-        authenticationService.authenticate(username, password);
-
+    public void setActive(String username, boolean active) {
         Trainee trainee = traineeRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("Trainee not found"));
 
@@ -102,15 +111,12 @@ public class TraineeService {
     }
 
     @Transactional(readOnly = true)
-    public List<Trainer> getUnassignedTrainers(String traineeUsername, String password) {
-        authenticationService.authenticate(traineeUsername, password);
+    public List<Trainer> getUnassignedTrainers(String traineeUsername) {
         return trainerRepository.findUnassignedTrainersForTrainee(traineeUsername);
     }
 
     @Transactional
-    public Set<Trainer> updateTraineeTrainers(String username, String password, Set<String> trainerUsernames) {
-        authenticationService.authenticate(username, password);
-
+    public Set<Trainer> updateTraineeTrainers(String username, Set<String> trainerUsernames) {
         Trainee trainee = traineeRepository.findByUsernameWithTrainers(username)
                 .orElseThrow(() -> new IllegalArgumentException("Trainee not found"));
 
@@ -130,9 +136,6 @@ public class TraineeService {
     }
 
     private void validateForUpdate(Trainee trainee) {
-        if (trainee.getId() == null) {
-            throw new ValidationException("Trainee id is required for update");
-        }
         if (trainee.getFirstName() == null || trainee.getFirstName().isBlank()
                 || trainee.getLastName() == null || trainee.getLastName().isBlank()) {
             throw new ValidationException("First name and last name are required");

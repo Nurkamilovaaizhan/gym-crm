@@ -3,6 +3,7 @@ package com.gymcrm.controller;
 import com.gymcrm.dto.TrainingTypeDto;
 import com.gymcrm.mapper.RestMapper;
 import com.gymcrm.service.TrainingTypeService;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,6 +19,7 @@ public class TrainingTypeController {
         this.trainingTypeService = trainingTypeService;
     }
 
+    @PreAuthorize("isAuthenticated()")
     @GetMapping
     public List<TrainingTypeDto> getAll() {
         return trainingTypeService.getAllTrainingTypes()

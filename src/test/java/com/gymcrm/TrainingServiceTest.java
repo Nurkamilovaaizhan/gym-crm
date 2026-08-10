@@ -1,4 +1,4 @@
-package com.gymcrm.service;
+package com.gymcrm;
 
 import com.gymcrm.entity.Trainee;
 import com.gymcrm.entity.Trainer;
@@ -9,10 +9,11 @@ import com.gymcrm.monitoring.metrics.GymMetricsService;
 import com.gymcrm.repository.TraineeRepository;
 import com.gymcrm.repository.TrainerRepository;
 import com.gymcrm.repository.TrainingRepository;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.junit.jupiter.api.BeforeEach;
+import com.gymcrm.service.TrainingService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -21,7 +22,6 @@ import java.util.HashSet;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,88 +37,89 @@ class TrainingServiceTest {
     private TrainerRepository trainerRepository;
 
     @Mock
-    private AuthenticationService authenticationService;
-
-    private SimpleMeterRegistry meterRegistry;
     private GymMetricsService gymMetricsService;
+
+    @InjectMocks
     private TrainingService trainingService;
 
-    @BeforeEach
-    void setUp() {
-        meterRegistry = new SimpleMeterRegistry();
-        gymMetricsService = new GymMetricsService(meterRegistry);
-        trainingService = new TrainingService(
-                trainingRepository,
-                traineeRepository,
-                trainerRepository,
-                authenticationService,
-                gymMetricsService
-        );
-    }
-
     @Test
-    void addTrainingShouldAttachEntitiesAndSave() {
+    void addTraining_shouldSaveAndConnectEntities() {
         Trainee trainee = new Trainee();
-        trainee.setId(1L);
         trainee.setUsername("Alan.Walker");
         trainee.setTrainers(new HashSet<>());
 
         TrainingType type = new TrainingType();
-        type.setId(10L);
-        type.setTrainingTypeName("Cardio");
+        type.setId(5L);
+        type.setTrainingTypeName("Yoga");
 
         Trainer trainer = new Trainer();
-        trainer.setId(2L);
         trainer.setUsername("Max.Verstappen");
         trainer.setSpecialization(type);
 
         Training training = new Training();
-        training.setTrainingName("Morning Run");
+        training.setTrainingName("Morning Yoga");
         training.setTrainingDate(LocalDateTime.now());
-        training.setTrainingDuration(45);
+        training.setTrainingDuration(60);
 
-        doNothing().when(authenticationService).authenticate("authUser", "pass");
         when(traineeRepository.findByUsernameWithTrainers("Alan.Walker")).thenReturn(Optional.of(trainee));
         when(trainerRepository.findByUsername("Max.Verstappen")).thenReturn(Optional.of(trainer));
         when(trainingRepository.save(any(Training.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Training saved = trainingService.addTraining(
-                "authUser",
-                "pass",
-                "Alan.Walker",
-                "Max.Verstappen",
-                training
-        );
+        Training created = trainingService.addTraining("Alan.Walker", "Max.Verstappen", training);
 
-        assertSame(trainee, saved.getTrainee());
-        assertSame(trainer, saved.getTrainer());
-        assertSame(type, saved.getTrainingType());
+        assertNotNull(created);
+        assertEquals("Morning Yoga", created.getTrainingName());
+        assertEquals(type, created.getTrainingType());
+        assertEquals(trainee, created.getTrainee());
+        assertEquals(trainer, created.getTrainer());
         assertTrue(trainee.getTrainers().contains(trainer));
-        assertEquals(1.0, meterRegistry.find("gym.trainings.created").counter().count());
 
-        verify(trainingRepository).save(any(Training.class));
+        ArgumentCaptor<Training> captor = ArgumentCaptor.forClass(Training.class);
+        verify(trainingRepository).save(captor.capture());
+        assertEquals("Morning Yoga", captor.getValue().getTrainingName());
+        verify(gymMetricsService).incrementTrainingCreated();
     }
 
     @Test
-    void addTrainingShouldFailWhenDurationIsInvalid() {
+    void addTraining_shouldThrowWhenTrainingNameMissing() {
         Training training = new Training();
-        training.setTrainingName("Morning Run");
         training.setTrainingDate(LocalDateTime.now());
-        training.setTrainingDuration(0);
+        training.setTrainingDuration(60);
+        training.setTrainingName(" ");
 
-        doNothing().when(authenticationService).authenticate("authUser", "pass");
-        when(traineeRepository.findByUsernameWithTrainers("Alan.Walker")).thenReturn(Optional.of(new Trainee()));
-        when(trainerRepository.findByUsername("Max.Verstappen")).thenReturn(Optional.of(new Trainer()));
+        Trainee trainee = new Trainee();
+        trainee.setUsername("Alan.Walker");
+        trainee.setTrainers(new HashSet<>());
+
+        Trainer trainer = new Trainer();
+        trainer.setUsername("Max.Verstappen");
+
+        when(traineeRepository.findByUsernameWithTrainers("Alan.Walker")).thenReturn(Optional.of(trainee));
+        when(trainerRepository.findByUsername("Max.Verstappen")).thenReturn(Optional.of(trainer));
 
         assertThrows(ValidationException.class,
-                () -> trainingService.addTraining(
-                        "authUser",
-                        "pass",
-                        "Alan.Walker",
-                        "Max.Verstappen",
-                        training
-                ));
+                () -> trainingService.addTraining("Alan.Walker", "Max.Verstappen", training));
+    }
 
-        verify(trainingRepository, never()).save(any());
+    @Test
+    void getTraineeTrainings_shouldQuery() {
+        when(trainingRepository.findByTraineeCriteria("Alan.Walker", null, null, null, null))
+                .thenReturn(java.util.List.of());
+
+        var result = trainingService.getTraineeTrainings("Alan.Walker", null, null, null, null);
+
+        assertNotNull(result);
+        verify(trainingRepository).findByTraineeCriteria("Alan.Walker", null, null, null, null);
+    }
+
+    @Test
+    void getTrainerTrainings_shouldQuery() {
+        when(trainingRepository.findByTrainerCriteria("Max.Verstappen", null, null, null))
+                .thenReturn(java.util.List.of());
+
+        var result = trainingService.getTrainerTrainings("Max.Verstappen", null, null, null);
+
+        assertNotNull(result);
+        verify(trainingRepository).findByTrainerCriteria("Max.Verstappen", null, null, null);
     }
 }

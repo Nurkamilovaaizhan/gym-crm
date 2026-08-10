@@ -3,6 +3,7 @@ package com.gymcrm.controller;
 import com.gymcrm.dto.TrainingDto;
 import com.gymcrm.mapper.RestMapper;
 import com.gymcrm.service.TrainingService;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -15,13 +16,10 @@ public class TrainingController {
         this.trainingService = trainingService;
     }
 
+    @PreAuthorize("isAuthenticated()")
     @PostMapping
-    public TrainingDto create(@RequestHeader(value = "username") String username,
-                              @RequestHeader(value = "password") String password,
-                              @RequestBody TrainingDto request) {
+    public TrainingDto create(@RequestBody TrainingDto request) {
         var saved = trainingService.addTraining(
-                username,
-                password,
                 request.getTraineeUsername(),
                 request.getTrainerUsername(),
                 RestMapper.toEntity(request)

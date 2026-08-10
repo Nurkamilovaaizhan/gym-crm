@@ -1,15 +1,17 @@
-package com.gymcrm.service;
+package com.gymcrm;
 
 import com.gymcrm.entity.User;
 import com.gymcrm.exception.AuthenticationException;
 import com.gymcrm.monitoring.metrics.GymMetricsService;
 import com.gymcrm.repository.UserRepository;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.junit.jupiter.api.BeforeEach;
+import com.gymcrm.security.jwt.JwtService;
+import com.gymcrm.service.AuthenticationService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
 
@@ -22,70 +24,98 @@ class AuthenticationServiceTest {
     @Mock
     private UserRepository userRepository;
 
-    private SimpleMeterRegistry meterRegistry;
+    @Mock
     private GymMetricsService gymMetricsService;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private JwtService jwtService;
+
+    @InjectMocks
     private AuthenticationService authenticationService;
 
-    @BeforeEach
-    void setUp() {
-        meterRegistry = new SimpleMeterRegistry();
-        gymMetricsService = new GymMetricsService(meterRegistry);
-        authenticationService = new AuthenticationService(userRepository, gymMetricsService);
+    @Test
+    void authenticate_shouldPassWhenPasswordMatches() {
+        User user = new User() {};
+        user.setUsername("Oscar.Piastri");
+        user.setPassword("$2a$10$encodedPassword");
+
+        when(userRepository.findByUsername("Oscar.Piastri")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("plainPassword", "$2a$10$encodedPassword")).thenReturn(true);
+
+        assertDoesNotThrow(() -> authenticationService.authenticate("Oscar.Piastri", "plainPassword"));
+
+        verify(gymMetricsService).incrementLoginSuccess();
     }
 
     @Test
-    void authenticateShouldIncreaseSuccessCounterWhenCredentialsMatch() {
-        User user = new TestUser();
-        user.setUsername("Alan.Walker");
-        user.setPassword("pass123");
-        when(userRepository.findByUsername("Alan.Walker")).thenReturn(Optional.of(user));
-
-        assertDoesNotThrow(() -> authenticationService.authenticate("Alan.Walker", "pass123"));
-
-        assertEquals(1.0, meterRegistry.find("gym.login.success").counter().count());
-        assertEquals(0.0, meterRegistry.find("gym.login.failed").counter().count());
-    }
-
-    @Test
-    void authenticateShouldIncreaseFailedCounterWhenUserNotFound() {
+    void authenticate_shouldThrowWhenUserNotFound() {
         when(userRepository.findByUsername("Missing.User")).thenReturn(Optional.empty());
 
         assertThrows(AuthenticationException.class,
                 () -> authenticationService.authenticate("Missing.User", "pass"));
 
-        assertEquals(1.0, meterRegistry.find("gym.login.failed").counter().count());
-        assertEquals(0.0, meterRegistry.find("gym.login.success").counter().count());
+        verify(gymMetricsService).incrementLoginFailed();
     }
 
     @Test
-    void authenticateShouldIncreaseFailedCounterWhenPasswordIsWrong() {
-        User user = new TestUser();
-        user.setUsername("Alan.Walker");
-        user.setPassword("pass123");
-        when(userRepository.findByUsername("Alan.Walker")).thenReturn(Optional.of(user));
+    void authenticate_shouldThrowWhenPasswordDoesNotMatch() {
+        User user = new User() {};
+        user.setUsername("Oscar.Piastri");
+        user.setPassword("$2a$10$encodedPassword");
+
+        when(userRepository.findByUsername("Oscar.Piastri")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("wrongPass", "$2a$10$encodedPassword")).thenReturn(false);
 
         assertThrows(AuthenticationException.class,
-                () -> authenticationService.authenticate("Alan.Walker", "wrong"));
+                () -> authenticationService.authenticate("Oscar.Piastri", "wrongPass"));
 
-        assertEquals(1.0, meterRegistry.find("gym.login.failed").counter().count());
-        assertEquals(0.0, meterRegistry.find("gym.login.success").counter().count());
+        verify(gymMetricsService).incrementLoginFailed();
     }
 
     @Test
-    void changePasswordShouldUpdatePassword() {
-        User user = new TestUser();
-        user.setUsername("Alan.Walker");
-        user.setPassword("oldPass");
-        when(userRepository.findByUsername("Alan.Walker")).thenReturn(Optional.of(user), Optional.of(user));
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    void login_shouldReturnJwtToken() {
+        User user = new User() {};
+        user.setUsername("Oscar.Piastri");
+        user.setPassword("$2a$10$encodedPassword");
 
-        authenticationService.changePassword("Alan.Walker", "oldPass", "newPass");
+        when(userRepository.findByUsername("Oscar.Piastri")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("plainPassword", "$2a$10$encodedPassword")).thenReturn(true);
+        when(jwtService.generateToken("Oscar.Piastri")).thenReturn("jwt-token");
 
-        assertEquals("newPass", user.getPassword());
-        verify(userRepository, times(2)).findByUsername("Alan.Walker");
+        String token = authenticationService.login("Oscar.Piastri", "plainPassword");
+
+        assertEquals("jwt-token", token);
+    }
+
+    @Test
+    void changePassword_shouldEncodeAndSaveNewPassword() {
+        User user = new User() {};
+        user.setUsername("Oscar.Piastri");
+        user.setPassword("$2a$10$encodedOld");
+
+        when(userRepository.findByUsername("Oscar.Piastri")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("oldPass", "$2a$10$encodedOld")).thenReturn(true);
+        when(passwordEncoder.encode("newPass")).thenReturn("$2a$10$encodedNew");
+
+        authenticationService.changePassword("Oscar.Piastri", "oldPass", "newPass");
+
+        assertEquals("$2a$10$encodedNew", user.getPassword());
         verify(userRepository).save(user);
     }
 
-    private static class TestUser extends User {
+    @Test
+    void logout_shouldBlacklistToken() {
+        authenticationService.logout("Bearer abc.def.ghi");
+
+        assertTrue(authenticationService.isTokenBlacklisted("abc.def.ghi"));
+    }
+
+    @Test
+    void logout_shouldThrowWhenHeaderIsInvalid() {
+        assertThrows(AuthenticationException.class,
+                () -> authenticationService.logout("abc.def.ghi"));
     }
 }

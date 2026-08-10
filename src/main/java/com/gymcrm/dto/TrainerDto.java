@@ -10,7 +10,6 @@ public class TrainerDto {
     private String firstName;
     private String lastName;
     private String username;
-    private String password;
     private Boolean isActive;
     private TrainingTypeDto specialization;
     private List<TraineeShortDto> trainees;

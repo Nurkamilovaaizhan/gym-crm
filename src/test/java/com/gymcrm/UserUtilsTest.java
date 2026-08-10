@@ -1,6 +1,7 @@
-package com.gymcrm.util;
+package com.gymcrm;
 
-import com.gymcrm.entity.Trainee;
+import com.gymcrm.entity.User;
+import com.gymcrm.util.UserUtils;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
@@ -10,42 +11,42 @@ import static org.junit.jupiter.api.Assertions.*;
 class UserUtilsTest {
 
     @Test
-    void generateUsernameShouldReturnBaseUsernameWhenNoDuplicates() {
+    void generatePassword_shouldReturn10Characters() {
+        String password = UserUtils.generatePassword();
+
+        assertNotNull(password);
+        assertEquals(10, password.length());
+    }
+
+    @Test
+    void generateUsername_shouldReturnBaseUsernameWhenNoDuplicates() {
         String username = UserUtils.generateUsername("Alan", "Walker", Set.of());
 
         assertEquals("Alan.Walker", username);
     }
 
     @Test
-    void generateUsernameShouldAddSerialNumberWhenUsernameExists() {
+    void generateUsername_shouldAppendSerialNumberWhenDuplicateExists() {
         String username = UserUtils.generateUsername(
                 "Alan",
                 "Walker",
-                Set.of("Alan.Walker", "Alan.Walker1", "Other.User")
+                Set.of("Alan.Walker", "Alan.Walker1")
         );
 
         assertEquals("Alan.Walker2", username);
     }
 
     @Test
-    void generatePasswordShouldHaveLengthTen() {
-        String password = UserUtils.generatePassword();
+    void setupCredentials_shouldFillUsernamePasswordAndActive() {
+        User user = new User() {};
+        user.setFirstName("Max");
+        user.setLastName("Verstappen");
 
-        assertEquals(10, password.length());
-        assertFalse(password.isBlank());
-    }
+        UserUtils.setupCredentials(user, Set.of());
 
-    @Test
-    void setupCredentialsShouldFillUsernamePasswordAndActivateUser() {
-        Trainee trainee = new Trainee();
-        trainee.setFirstName("Alan");
-        trainee.setLastName("Walker");
-
-        UserUtils.setupCredentials(trainee, Set.of());
-
-        assertEquals("Alan.Walker", trainee.getUsername());
-        assertNotNull(trainee.getPassword());
-        assertEquals(10, trainee.getPassword().length());
-        assertTrue(trainee.isActive());
+        assertEquals("Max.Verstappen", user.getUsername());
+        assertNotNull(user.getPassword());
+        assertEquals(10, user.getPassword().length());
+        assertTrue(user.isActive());
     }
 }

@@ -1,12 +1,13 @@
 package com.gymcrm.controller;
 
+import com.gymcrm.dto.TokenDto;
 import com.gymcrm.service.AuthenticationService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpHeaders;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
+@RequestMapping("/api")
 public class AuthController {
 
     private final AuthenticationService authenticationService;
@@ -15,16 +16,24 @@ public class AuthController {
         this.authenticationService = authenticationService;
     }
 
-    @GetMapping("/api/login")
-    public void login(@RequestParam(value = "username") String username,
-                      @RequestParam(value = "password") String password) {
-        authenticationService.authenticate(username, password);
+    @GetMapping("/login")
+    public TokenDto login(@RequestParam("username") String username,
+                          @RequestParam("password") String password) {
+        String token = authenticationService.login(username, password);
+        return new TokenDto(username, token);
     }
 
-    @PutMapping("/api/login/password")
-    public void changePassword(@RequestParam(value = "username") String username,
-                               @RequestParam(value = "oldPassword") String oldPassword,
-                               @RequestParam(value = "newPassword") String newPassword) {
+    @PreAuthorize("isAuthenticated()")
+    @PostMapping("/logout")
+    public void logout(@RequestHeader(HttpHeaders.AUTHORIZATION) String authorizationHeader) {
+        authenticationService.logout(authorizationHeader);
+    }
+
+    @PreAuthorize("isAuthenticated()")
+    @PutMapping("/login/password")
+    public void changePassword(@RequestParam("username") String username,
+                               @RequestParam("oldPassword") String oldPassword,
+                               @RequestParam("newPassword") String newPassword) {
         authenticationService.changePassword(username, oldPassword, newPassword);
     }
 }

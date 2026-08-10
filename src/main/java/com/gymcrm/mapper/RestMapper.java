@@ -87,7 +87,6 @@ public final class RestMapper {
         dto.setFirstName(trainee.getFirstName());
         dto.setLastName(trainee.getLastName());
         dto.setUsername(trainee.getUsername());
-        dto.setPassword(trainee.getPassword());
         dto.setIsActive(trainee.isActive());
         dto.setDateOfBirth(trainee.getDateOfBirth());
         dto.setAddress(trainee.getAddress());
@@ -131,7 +130,6 @@ public final class RestMapper {
         dto.setFirstName(trainer.getFirstName());
         dto.setLastName(trainer.getLastName());
         dto.setUsername(trainer.getUsername());
-        dto.setPassword(trainer.getPassword());
         dto.setIsActive(trainer.isActive());
         dto.setSpecialization(toDto(trainer.getSpecialization()));
 
