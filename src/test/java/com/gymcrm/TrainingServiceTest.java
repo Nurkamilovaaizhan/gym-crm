@@ -9,6 +9,7 @@ import com.gymcrm.monitoring.metrics.GymMetricsService;
 import com.gymcrm.repository.TraineeRepository;
 import com.gymcrm.repository.TrainerRepository;
 import com.gymcrm.repository.TrainingRepository;
+import com.gymcrm.service.TrainerWorkloadSenderService;
 import com.gymcrm.service.TrainingService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +23,8 @@ import java.util.HashSet;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -39,6 +42,9 @@ class TrainingServiceTest {
     @Mock
     private GymMetricsService gymMetricsService;
 
+    @Mock
+    private TrainerWorkloadSenderService trainerWorkloadSenderService;
+
     @InjectMocks
     private TrainingService trainingService;
 
@@ -54,6 +60,9 @@ class TrainingServiceTest {
 
         Trainer trainer = new Trainer();
         trainer.setUsername("Max.Verstappen");
+        trainer.setFirstName("Max");
+        trainer.setLastName("Verstappen");
+        trainer.setActive(true);
         trainer.setSpecialization(type);
 
         Training training = new Training();
@@ -65,7 +74,13 @@ class TrainingServiceTest {
         when(trainerRepository.findByUsername("Max.Verstappen")).thenReturn(Optional.of(trainer));
         when(trainingRepository.save(any(Training.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Training created = trainingService.addTraining("Alan.Walker", "Max.Verstappen", training);
+        Training created = trainingService.addTraining(
+                "Bearer test-token",
+                "tx-1",
+                "Alan.Walker",
+                "Max.Verstappen",
+                training
+        );
 
         assertNotNull(created);
         assertEquals("Morning Yoga", created.getTrainingName());
@@ -77,7 +92,9 @@ class TrainingServiceTest {
         ArgumentCaptor<Training> captor = ArgumentCaptor.forClass(Training.class);
         verify(trainingRepository).save(captor.capture());
         assertEquals("Morning Yoga", captor.getValue().getTrainingName());
+
         verify(gymMetricsService).incrementTrainingCreated();
+        verify(trainerWorkloadSenderService).send(eq("Bearer test-token"), eq("tx-1"), any());
     }
 
     @Test
@@ -98,7 +115,7 @@ class TrainingServiceTest {
         when(trainerRepository.findByUsername("Max.Verstappen")).thenReturn(Optional.of(trainer));
 
         assertThrows(ValidationException.class,
-                () -> trainingService.addTraining("Alan.Walker", "Max.Verstappen", training));
+                () -> trainingService.addTraining("Bearer test-token", "tx-1", "Alan.Walker", "Max.Verstappen", training));
     }
 
     @Test

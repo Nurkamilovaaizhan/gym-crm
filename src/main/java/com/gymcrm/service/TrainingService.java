@@ -1,5 +1,7 @@
 package com.gymcrm.service;
 
+import com.gymcrm.constants.enums.ActionType;
+import com.gymcrm.dto.TrainerWorkloadRequest;
 import com.gymcrm.entity.Trainee;
 import com.gymcrm.entity.Trainer;
 import com.gymcrm.entity.Training;
@@ -23,19 +25,24 @@ public class TrainingService {
     private final TraineeRepository traineeRepository;
     private final TrainerRepository trainerRepository;
     private final GymMetricsService gymMetricsService;
+    private final TrainerWorkloadSenderService trainerWorkloadSenderService;
 
     public TrainingService(TrainingRepository trainingRepository,
                            TraineeRepository traineeRepository,
                            TrainerRepository trainerRepository,
-                           GymMetricsService gymMetricsService) {
+                           GymMetricsService gymMetricsService,
+                           TrainerWorkloadSenderService trainerWorkloadSenderService) {
         this.trainingRepository = trainingRepository;
         this.traineeRepository = traineeRepository;
         this.trainerRepository = trainerRepository;
         this.gymMetricsService = gymMetricsService;
+        this.trainerWorkloadSenderService = trainerWorkloadSenderService;
     }
 
     @Transactional
-    public Training addTraining(String traineeUsername,
+    public Training addTraining(String authorization,
+                                String transactionId,
+                                String traineeUsername,
                                 String trainerUsername,
                                 Training training) {
         Trainee trainee = traineeRepository.findByUsernameWithTrainers(traineeUsername)
@@ -55,9 +62,46 @@ public class TrainingService {
         Training saved = trainingRepository.save(training);
         gymMetricsService.incrementTrainingCreated();
 
+        TrainerWorkloadRequest request = new TrainerWorkloadRequest();
+        request.setTrainerUsername(trainer.getUsername());
+        request.setTrainerFirstName(trainer.getFirstName());
+        request.setTrainerLastName(trainer.getLastName());
+        request.setActive(trainer.isActive());
+        request.setTrainingDate(saved.getTrainingDate());
+        request.setTrainingDuration(saved.getTrainingDuration());
+        request.setActionType(ActionType.ADD);
+
+        trainerWorkloadSenderService.send(authorization, transactionId, request);
+
         log.info("Training '{}' added for trainee {} and trainer {}",
                 saved.getTrainingName(), trainee.getUsername(), trainer.getUsername());
         return saved;
+    }
+
+    @Transactional
+    public void deleteTraining(String authorization,
+                               String transactionId,
+                               Long trainingId) {
+        Training training = trainingRepository.findById(trainingId)
+                .orElseThrow(() -> new IllegalArgumentException("Training not found"));
+
+        Trainer trainer = training.getTrainer();
+
+        TrainerWorkloadRequest request = new TrainerWorkloadRequest();
+        request.setTrainerUsername(trainer.getUsername());
+        request.setTrainerFirstName(trainer.getFirstName());
+        request.setTrainerLastName(trainer.getLastName());
+        request.setActive(trainer.isActive());
+        request.setTrainingDate(training.getTrainingDate());
+        request.setTrainingDuration(training.getTrainingDuration());
+        request.setActionType(ActionType.DELETE);
+
+        trainerWorkloadSenderService.send(authorization, transactionId, request);
+
+        trainingRepository.delete(training);
+
+        log.info("Training '{}' deleted for trainer {}",
+                training.getTrainingName(), trainer.getUsername());
     }
 
     @Transactional(readOnly = true)
