@@ -40,7 +40,7 @@ public class TrainingService {
     }
 
     @Transactional
-    public Training addTraining(String authorization,
+    public Training addTraining(
                                 String transactionId,
                                 String traineeUsername,
                                 String trainerUsername,
@@ -71,7 +71,7 @@ public class TrainingService {
         request.setTrainingDuration(saved.getTrainingDuration());
         request.setActionType(ActionType.ADD);
 
-        trainerWorkloadSenderService.send(authorization, transactionId, request);
+        trainerWorkloadSenderService.send(transactionId, request);
 
         log.info("Training '{}' added for trainee {} and trainer {}",
                 saved.getTrainingName(), trainee.getUsername(), trainer.getUsername());
@@ -79,8 +79,7 @@ public class TrainingService {
     }
 
     @Transactional
-    public void deleteTraining(String authorization,
-                               String transactionId,
+    public void deleteTraining(String transactionId,
                                Long trainingId) {
         Training training = trainingRepository.findById(trainingId)
                 .orElseThrow(() -> new IllegalArgumentException("Training not found"));
@@ -96,7 +95,7 @@ public class TrainingService {
         request.setTrainingDuration(training.getTrainingDuration());
         request.setActionType(ActionType.DELETE);
 
-        trainerWorkloadSenderService.send(authorization, transactionId, request);
+        trainerWorkloadSenderService.send(transactionId, request);
 
         trainingRepository.delete(training);
 
