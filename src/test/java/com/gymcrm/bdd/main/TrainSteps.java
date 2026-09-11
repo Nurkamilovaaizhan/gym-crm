@@ -2,124 +2,143 @@ package com.gymcrm.bdd.main;
 
 import com.gymcrm.entity.Trainee;
 import com.gymcrm.entity.Trainer;
-import com.gymcrm.entity.Training;
 import com.gymcrm.entity.TrainingType;
-import com.gymcrm.monitoring.metrics.GymMetricsService;
 import com.gymcrm.repository.TraineeRepository;
 import com.gymcrm.repository.TrainerRepository;
 import com.gymcrm.repository.TrainingRepository;
-import com.gymcrm.service.TrainerWorkloadSenderService;
-import com.gymcrm.service.TrainingService;
+import com.gymcrm.repository.TrainingTypeRepository;
 import io.cucumber.java.Before;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
-
-import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.Optional;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 public class TrainSteps {
 
-    private TrainingService service;
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
     private TraineeRepository traineeRepository;
+
+    @Autowired
     private TrainerRepository trainerRepository;
+
+    @Autowired
     private TrainingRepository trainingRepository;
-    private Training saved;
+
+    @Autowired
+    private TrainingTypeRepository trainingTypeRepository;
+
+    private ResultActions result;
     private Exception error;
 
     @Before
-    public void setUp() {
-        traineeRepository = mock(TraineeRepository.class);
-        trainerRepository = mock(TrainerRepository.class);
-        trainingRepository = mock(TrainingRepository.class);
+    public void cleanDatabase() {
+        trainingRepository.deleteAll();
+        traineeRepository.deleteAll();
+        trainerRepository.deleteAll();
+        trainingTypeRepository.deleteAll();
 
-        GymMetricsService metrics = mock(GymMetricsService.class);
-        TrainerWorkloadSenderService sender = mock(TrainerWorkloadSenderService.class);
-
-        service = new TrainingService(
-                trainingRepository,
-                traineeRepository,
-                trainerRepository,
-                metrics,
-                sender
-        );
+        result = null;
+        error = null;
     }
 
     @Given("training component is ready")
     public void componentReady() {
+        TrainingType type = new TrainingType();
+        type.setTrainingTypeName("Strength");
+        type = trainingTypeRepository.save(type);
+
         Trainee trainee = new Trainee();
-        trainee.setUsername("Trainee.One");
         trainee.setFirstName("Trainee");
         trainee.setLastName("One");
-        trainee.setTrainers(new HashSet<>());
+        trainee.setUsername("Trainee.One");
+        trainee.setPassword("test-password");
+        trainee.setActive(true);
 
         Trainer trainer = new Trainer();
-        trainer.setUsername("Trainer.One");
         trainer.setFirstName("Trainer");
         trainer.setLastName("One");
-
-        TrainingType type = new TrainingType();
-        type.setId(1L);
-        type.setTrainingTypeName("Strength");
+        trainer.setUsername("Trainer.One");
+        trainer.setPassword("test-password");
+        trainer.setActive(true);
         trainer.setSpecialization(type);
 
-        when(traineeRepository.findByUsernameWithTrainers("Trainee.One"))
-                .thenReturn(Optional.of(trainee));
-
-        when(trainerRepository.findByUsername("Trainer.One"))
-                .thenReturn(Optional.of(trainer));
-
-        when(trainingRepository.save(any(Training.class)))
-                .thenAnswer(invocation -> {
-                    saved = invocation.getArgument(0);
-                    return saved;
-                });
+        traineeRepository.save(trainee);
+        trainerRepository.save(trainer);
     }
 
     @Given("trainer does not exist")
     public void trainerDoesNotExist() {
-        when(trainerRepository.findByUsername("Trainer.One"))
-                .thenReturn(Optional.empty());
+        trainerRepository.deleteAll();
     }
 
     @When("I submit valid training")
     public void submitValidTraining() {
-        try {
-            Training training = new Training();
-            training.setTrainingName("Morning training");
-            training.setTrainingDate(LocalDateTime.of(2026, 9, 10, 10, 0));
-            training.setTrainingDuration(60);
+        submitTrainingRequest();
+    }
 
-            service.addTraining(
-                    "test-transaction",
-                    "Trainee.One",
-                    "Trainer.One",
-                    training
+    @When("I submit training")
+    public void submitTraining() {
+        submitTrainingRequest();
+    }
+
+    private void submitTrainingRequest() {
+        String body = """
+                {
+                  "traineeUsername": "Trainee.One",
+                  "trainerUsername": "Trainer.One",
+                  "trainingName": "Morning training",
+                  "trainingDate": "2026-09-10T10:00:00",
+                  "trainingDuration": 60
+                }
+                """;
+
+        try {
+            result = mockMvc.perform(
+                    post("/api/trainings")
+                            .with(user("test-user"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body)
             );
         } catch (Exception exception) {
             error = exception;
         }
     }
 
-    @When("I submit training")
-    public void submitTraining() {
-        submitValidTraining();
-    }
-
     @Then("training is saved successfully")
     public void trainingIsSaved() {
         assertThat(error).isNull();
-        assertThat(saved).isNotNull();
-        assertThat(saved.getTrainingName()).isEqualTo("Morning training");
+
+        try {
+            result.andExpect(status().isOk())
+                    .andExpect(jsonPath("$.trainingName")
+                            .value("Morning training"))
+                    .andExpect(jsonPath("$.trainingDuration")
+                            .value(60));
+        } catch (Exception exception) {
+            throw new AssertionError("Training response is invalid", exception);
+        }
     }
 
     @Then("training error is returned")
     public void trainingError() {
-        assertThat(error).isInstanceOf(IllegalArgumentException.class);
+        assertThat(error).isNull();
+
+        try {
+            result.andExpect(status().isBadRequest());
+        } catch (Exception exception) {
+            throw new AssertionError("Expected bad request", exception);
+        }
     }
 }
